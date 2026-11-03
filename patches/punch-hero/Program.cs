@@ -25,7 +25,7 @@ class Program {
     }
 
     static void Main(string[] args) {
-        string managedDir = "/Users/macmini/.gemini/antigravity-cli/brain/e52d6244-bab0-47d7-b6ad-2967c31599a8/scratch/ph_inspect/assets/bin/Data/Managed";
+        string managedDir = args.Length > 0 ? args[0] : throw new ArgumentException("Pass the extracted game Managed directory");
         string dllPath = Path.Combine(managedDir, "Assembly-CSharp.dll");
         string backupPath = Path.Combine(managedDir, "Assembly-CSharp.dll.bak");
         if (!File.Exists(backupPath)) {
@@ -81,10 +81,20 @@ class Program {
         var monoBehaviourType = guiEventHandlerType.BaseType.Resolve();
         var invokeMethod = mod.ImportReference(monoBehaviourType.Methods.First(m => m.Name == "Invoke" && m.Parameters.Count == 2));
         var cancelInvokeMethod = mod.ImportReference(monoBehaviourType.Methods.First(m => m.Name == "CancelInvoke" && m.Parameters.Count == 1));
-        var strConcat2 = mod.ImportReference(typeof(string).GetMethod("Concat", new[] { typeof(string), typeof(string) }));
-        var strConcat3 = mod.ImportReference(typeof(string).GetMethod("Concat", new[] { typeof(string), typeof(string), typeof(string) }));
-        var strConcat4 = mod.ImportReference(typeof(string).GetMethod("Concat", new[] { typeof(string), typeof(string), typeof(string), typeof(string) }));
-        var intToString = mod.ImportReference(typeof(int).GetMethod("ToString", Type.EmptyTypes));
+        // Import runtime members from the game's .NET 2.0 profile, not the patcher's .NET 10.
+        var core = resolver.Resolve((AssemblyNameReference)mod.TypeSystem.CoreLibrary);
+        var legacyString = core.MainModule.GetType("System.String");
+        MethodReference Concat(int count) => mod.ImportReference(legacyString.Methods.First(m => m.Name == "Concat" && m.Parameters.Count == count && m.Parameters.All(p => p.ParameterType.FullName == "System.String")));
+        var strConcat2 = Concat(2);
+        var strConcat3 = Concat(3);
+        var strConcat4 = Concat(4);
+        var intToString = mod.ImportReference(core.MainModule.GetType("System.Int32").Methods.First(m => m.Name == "ToString" && m.Parameters.Count == 0));
+
+        var gateAsm = AssemblyDefinition.ReadAssembly(Path.Combine(managedDir, "RevivalAdGate.dll"), readerParams);
+        var gate = gateAsm.MainModule.GetType("RevivalAdGate");
+        var gateReplay = mod.ImportReference(gate.Fields.First(f => f.Name == "IsReplaying"));
+        var gateBegin = mod.ImportReference(gate.Methods.First(m => m.Name == "Begin"));
+        var gateCapture = mod.ImportReference(gate.Methods.First(m => m.Name == "Capture"));
 
         var gmInstanceField = gameManagerType.Fields.First(f => f.Name == "instance");
         var guiInstanceField = guiEventHandlerType.Fields.First(f => f.Name == "instance");
@@ -363,6 +373,13 @@ class Program {
             mRecordAdWatch.Body.Variables.Add(vWatched);
             var il = mRecordAdWatch.Body.GetILProcessor();
             var lblNotReady = il.Create(OpCodes.Nop);
+
+            var hasCompletedAd = il.Create(OpCodes.Nop);
+            il.Append(il.Create(OpCodes.Ldsfld, gateReplay));
+            il.Append(il.Create(OpCodes.Brtrue, hasCompletedAd));
+            il.Append(il.Create(OpCodes.Ldc_I4_0));
+            il.Append(il.Create(OpCodes.Ret));
+            il.Append(hasCompletedAd);
 
             // int watched = SaveData.GetEventCount(key) + 1;
             il.Append(il.Create(OpCodes.Ldarg_0));
@@ -663,6 +680,8 @@ class Program {
             var lblCatch = il.Create(OpCodes.Pop);
             var lblRet = il.Create(OpCodes.Ret);
 
+            il.Append(il.Create(OpCodes.Ldsfld, gateReplay));
+            il.Append(il.Create(OpCodes.Brtrue, lblRet));
             il.Append(lblTryStart);
             il.Append(il.Create(OpCodes.Newobj, ajcCtor));
             il.Append(il.Create(OpCodes.Stloc_0));
@@ -687,7 +706,7 @@ class Program {
                 TryEnd = lblCatch,
                 HandlerStart = lblCatch,
                 HandlerEnd = lblRet,
-                CatchType = mod.ImportReference(typeof(Exception))
+                CatchType = mod.ImportReference(core.MainModule.GetType("System.Exception"))
             });
             guiEventHandlerType.Methods.Add(mTriggerRewarded);
         }
@@ -729,7 +748,7 @@ class Program {
                 TryEnd = lblCatch,
                 HandlerStart = lblCatch,
                 HandlerEnd = lblRet,
-                CatchType = mod.ImportReference(typeof(Exception))
+                CatchType = mod.ImportReference(core.MainModule.GetType("System.Exception"))
             });
             guiEventHandlerType.Methods.Add(mTriggerInterstitial);
         }
@@ -756,28 +775,18 @@ class Program {
         mStartAdRewardPopup.Parameters.Add(new ParameterDefinition("msg", ParameterAttributes.None, stringType));
         {
             var il = mStartAdRewardPopup.Body.GetILProcessor();
-            var lblRet = il.Create(OpCodes.Ret);
+            var completed = il.Create(OpCodes.Nop);
+            il.Append(il.Create(OpCodes.Ldsfld, gateReplay));
+            il.Append(il.Create(OpCodes.Brtrue, completed));
+            il.Append(il.Create(OpCodes.Ldarg_1));
+            il.Append(il.Create(OpCodes.Call, gateBegin));
+            il.Append(il.Create(OpCodes.Ret));
+            il.Append(completed);
             il.Append(il.Create(OpCodes.Ldarg_1));
             il.Append(il.Create(OpCodes.Stsfld, adRewardMsgField));
-            il.Append(il.Create(OpCodes.Ldarg_1));
-            il.Append(il.Create(OpCodes.Call, mTriggerRewarded));
-            il.Append(il.Create(OpCodes.Call, uiMsgBoxInstanceGetter));
-            il.Append(il.Create(OpCodes.Brfalse_S, lblRet));
-            il.Append(il.Create(OpCodes.Call, uiMsgBoxInstanceGetter));
-            il.Append(il.Create(OpCodes.Ldnull));
-            il.Append(il.Create(OpCodes.Ldnull));
-            il.Append(il.Create(OpCodes.Ldstr, "UNITY LEVELPLAY REWARDED AD"));
-            il.Append(il.Create(OpCodes.Ldstr, "Placement: BP_Rewarded_Android\nApp ID: 800423173 (Proj: 18967937473391)"));
-            il.Append(il.Create(OpCodes.Ldc_I4_0)); // MessageType.NONE = 0
-            il.Append(il.Create(OpCodes.Callvirt, uiMsgBoxBegin5));
             il.Append(il.Create(OpCodes.Ldarg_0));
-            il.Append(il.Create(OpCodes.Ldstr, "OnAdWatchComplete"));
-            il.Append(il.Create(OpCodes.Call, cancelInvokeMethod));
-            il.Append(il.Create(OpCodes.Ldarg_0));
-            il.Append(il.Create(OpCodes.Ldstr, "OnAdWatchComplete"));
-            il.Append(il.Create(OpCodes.Ldc_R4, 3.1f));
-            il.Append(il.Create(OpCodes.Call, invokeMethod));
-            il.Append(lblRet);
+            il.Append(il.Create(OpCodes.Call, mOnAdWatchComplete));
+            il.Append(il.Create(OpCodes.Ret));
             guiEventHandlerType.Methods.Add(mStartAdRewardPopup);
         }
 
@@ -836,9 +845,7 @@ class Program {
             il.Append(il.Create(OpCodes.Callvirt, getPidDisplayName));
             il.Append(il.Create(OpCodes.Call, mTriggerRewarded));
             il.Append(il.Create(OpCodes.Ldarg_0));
-            il.Append(il.Create(OpCodes.Ldstr, "OnPurchaseCheatSuccesful"));
-            il.Append(il.Create(OpCodes.Ldc_R4, 3.1f));
-            il.Append(il.Create(OpCodes.Call, invokeMethod));
+            il.Append(il.Create(OpCodes.Call, purchaseMgrType.Methods.First(m => m.Name == "OnPurchaseCheatSuccesful")));
             il.Append(il.Create(OpCodes.Ret));
 
             // Progress only -> play ad & show updated progress (e.g. 1/5 ADS or 1/40 ADS)
@@ -1011,6 +1018,13 @@ class Program {
 
             // Fallback if Capsule Shop clicked from main shop menu: grant +1,500 Gold & +25 Star Cash per 1 Ad!
             il.Append(lblCapsuleBonus);
+            var grantCapsule = il.Create(OpCodes.Nop);
+            il.Append(il.Create(OpCodes.Ldsfld, gateReplay));
+            il.Append(il.Create(OpCodes.Brtrue, grantCapsule));
+            il.Append(il.Create(OpCodes.Ldstr, "Capsule bonus"));
+            il.Append(il.Create(OpCodes.Call, gateBegin));
+            il.Append(il.Create(OpCodes.Ret));
+            il.Append(grantCapsule);
             il.Append(il.Create(OpCodes.Call, getCoin));
             il.Append(il.Create(OpCodes.Ldc_I4, 1500));
             il.Append(il.Create(OpCodes.Add));
@@ -1448,6 +1462,13 @@ class Program {
             mBoost.Body.Variables.Clear();
             mBoost.Body.ExceptionHandlers.Clear();
             var il = mBoost.Body.GetILProcessor();
+            var grantBooster = il.Create(OpCodes.Nop);
+            il.Append(il.Create(OpCodes.Ldsfld, gateReplay));
+            il.Append(il.Create(OpCodes.Brtrue, grantBooster));
+            il.Append(il.Create(OpCodes.Ldstr, "Booster"));
+            il.Append(il.Create(OpCodes.Call, gateBegin));
+            il.Append(il.Create(OpCodes.Ret));
+            il.Append(grantBooster);
             il.Append(il.Create(OpCodes.Ldarg_1));
             il.Append(il.Create(OpCodes.Ldarg_1));
             il.Append(il.Create(OpCodes.Call, getBoostCount));
@@ -1610,6 +1631,47 @@ class Program {
                 }
             }
         }
+
+        var getMethod = mod.ImportReference(core.MainModule.GetType("System.Reflection.MethodBase").Methods.First(m => m.Name == "GetMethodFromHandle" && m.Parameters.Count == 1));
+        var deferredActions = new[] {
+            purchaseMgrType.Methods.First(m => m.Name == "Purchase" && m.Parameters.Count == 2),
+            guiEventHandlerType.Methods.First(m => m.Name == "OnEnterGachaShop"),
+            gameManagerType.Methods.First(m => m.Name == "BuySkill"),
+            gameManagerType.Methods.First(m => m.Name == "BuyItem" && m.Parameters.Count == 2 && m.Parameters[0].ParameterType == shopItemInfoType),
+            gameManagerType.Methods.First(m => m.Name == "BuyItem" && m.Parameters.Count == 2 && m.Parameters[0].ParameterType.Name == "eBoosterType"),
+            gameManagerType.Methods.First(m => m.Name == "Train")
+        };
+        foreach (var m in deferredActions) {
+            if (m.ReturnType.FullName != "System.Void") throw new Exception("Expected void action: " + m.FullName);
+            var il = m.Body.GetILProcessor();
+            var first = m.Body.Instructions[0];
+            void Emit(Instruction ins) => il.InsertBefore(first, ins);
+            Emit(il.Create(OpCodes.Ldarg_0));
+            Emit(il.Create(OpCodes.Ldtoken, m));
+            Emit(il.Create(OpCodes.Call, getMethod));
+            Emit(il.Create(OpCodes.Ldc_I4, m.Parameters.Count));
+            Emit(il.Create(OpCodes.Newarr, objectType));
+            for (int i = 0; i < m.Parameters.Count; i++) {
+                Emit(il.Create(OpCodes.Dup));
+                Emit(il.Create(OpCodes.Ldc_I4, i));
+                Emit(il.Create(OpCodes.Ldarg, m.Parameters[i]));
+                if (m.Parameters[i].ParameterType.IsValueType) Emit(il.Create(OpCodes.Box, m.Parameters[i].ParameterType));
+                Emit(il.Create(OpCodes.Stelem_Ref));
+            }
+            Emit(il.Create(OpCodes.Call, gateCapture));
+            Emit(il.Create(OpCodes.Brtrue, first));
+            Emit(il.Create(OpCodes.Ret));
+        }
+        // New guards can push old short branches outside their signed-byte range.
+        foreach (var type in mod.Types) foreach (var method in type.Methods.Where(m => m.HasBody))
+            foreach (var ins in method.Body.Instructions) {
+                if (ins.OpCode.OperandType == OperandType.ShortInlineBrTarget) {
+                    string name = ins.OpCode.Name.Replace(".s", "");
+                    ins.OpCode = (OpCode)typeof(OpCodes).GetFields().First(f => f.FieldType == typeof(OpCode) && ((OpCode)f.GetValue(null)!).Name == name).GetValue(null)!;
+                }
+            }
+        if (mod.AssemblyReferences.Any(r => r.Name == "System.Private.CoreLib" || r.Name == "System.Runtime"))
+            throw new Exception("Host runtime reference leaked into game");
 
         string outPath = Path.Combine(managedDir, "Assembly-CSharp.patched.dll");
         asm.Write(outPath);

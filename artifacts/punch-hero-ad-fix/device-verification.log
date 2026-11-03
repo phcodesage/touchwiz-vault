@@ -1,0 +1,11 @@
+--------- beginning of main
+11-04 06:45:26.308 I/UnityAdsBridge(15722): Initializing Unity Ads 4.4.1 gameId=800423173 testMode=false
+11-04 06:45:28.031 I/UnityAdsBridge(15722): onInitializationComplete
+11-04 06:45:29.642 I/UnityAdsBridge(15722): onUnityAdsAdLoaded: BP_Rewarded_Android
+11-04 06:45:29.798 I/UnityAdsBridge(15722): onUnityAdsAdLoaded: BP_Interstitial_Android
+11-04 06:45:57.385 I/UnityAdsBridge(15722): UnityAds.show -> BP_Rewarded_Android
+11-04 06:45:58.114 I/UnityAdsBridge(15722): onUnityAdsShowStart: BP_Rewarded_Android
+11-04 06:48:30.442 I/UnityAdsBridge(15722): onUnityAdsShowClick: BP_Rewarded_Android
+11-04 06:49:09.685 I/UnityAdsBridge(15722): onUnityAdsShowComplete: COMPLETED
+11-04 06:49:09.685 I/UnityAdsBridge(15722): Reward result: completed
+11-04 06:49:11.545 I/UnityAdsBridge(15722): onUnityAdsAdLoaded: BP_Rewarded_Android

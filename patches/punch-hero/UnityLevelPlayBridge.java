@@ -1,16 +1,12 @@
 package com.touchwizvault.ads;
 
 import android.app.Activity;
-import android.content.Context;
+import android.os.Handler;
+import android.os.Looper;
 import android.util.Log;
-import com.unity3d.ads.IUnityAdsInitializationListener;
-import com.unity3d.ads.IUnityAdsLoadListener;
-import com.unity3d.ads.IUnityAdsShowListener;
-import com.unity3d.ads.UnityAds;
-import com.unity3d.ads.UnityAdsLoadOptions;
-import com.unity3d.ads.UnityAdsShowOptions;
+import android.widget.Toast;
+import com.unity3d.ads.*;
 import com.unity3d.player.UnityPlayer;
-import com.unity3d.services.core.properties.SdkProperties;
 
 public class UnityLevelPlayBridge {
     public static final String TAG = "UnityAdsBridge";
@@ -18,256 +14,151 @@ public class UnityLevelPlayBridge {
     public static final String PROJECT_ID = "18967937473391";
     public static final String REWARDED_PLACEMENT = "BP_Rewarded_Android";
     public static final String INTERSTITIAL_PLACEMENT = "BP_Interstitial_Android";
-
-    private static boolean isInitializing = false;
-    private static boolean rewardedLoaded = false;
-    private static boolean interstitialLoaded = false;
-    private static String activeRewardedPlacement = REWARDED_PLACEMENT;
-    private static String activeInterstitialPlacement = INTERSTITIAL_PLACEMENT;
-    private static boolean pendingShowRewarded = false;
-    private static boolean pendingShowInterstitial = false;
-
-    public static void init() {
-        final Activity activity = UnityPlayer.currentActivity;
-        if (activity == null) {
-            Log.w(TAG, "init() called but UnityPlayer.currentActivity is null");
-            return;
+    private static final Handler main = new Handler(Looper.getMainLooper());
+    private static boolean initializing, rewardedLoaded, interstitialLoaded;
+    private static boolean rewardedLoading, interstitialLoading, pendingRewarded;
+    private static boolean showingRewarded, showingInterstitial;
+    private static final Runnable loadTimeout = new Runnable() {
+        public void run() {
+            if (pendingRewarded && !showingRewarded) finishRewarded("failed", "Ad loading timed out. Please try again.");
         }
-        activity.runOnUiThread(new Runnable() {
-            @Override
-            public void run() {
-                ensureInitialized(activity);
-            }
-        });
+    };
+
+    private static Activity activity() { return UnityPlayer.currentActivity; }
+    private static void toast(String message) {
+        Activity a = activity();
+        if (a != null) Toast.makeText(a, message, Toast.LENGTH_SHORT).show();
     }
-
-    private static void ensureInitialized(final Activity activity) {
-        if (UnityAds.isInitialized()) {
-            preloadPlacements();
+    private static void finishRewarded(String result, String message) {
+        main.removeCallbacks(loadTimeout);
+        if (!pendingRewarded) return;
+        pendingRewarded = false;
+        showingRewarded = false;
+        Log.i(TAG, "Reward result: " + result);
+        UnityPlayer.UnitySendMessage("RevivalAdGate", "OnAdResult", result);
+        if (message != null) toast(message);
+    }
+    public static void init() { main.post(new Runnable() { public void run() { ensureInitialized(); } }); }
+    private static void ensureInitialized() {
+        if (activity() == null) {
+            finishRewarded("failed", null);
             return;
         }
-        if (isInitializing) {
-            return;
-        }
-        isInitializing = true;
+        if (UnityAds.isInitialized()) { preloadPlacements(); return; }
+        if (initializing) return;
+        initializing = true;
         UnityAds.setDebugMode(true);
-
-        final Context appContext = activity.getApplicationContext();
-        Log.i(TAG, "Initializing Real UnityAds SDK v" + UnityAds.getVersion()
-                + " | gameId=" + APP_ID + " | projectId=" + PROJECT_ID);
-
-        // Start in live mode (false); if live fill returns NO_FILL for a new unverified app,
-        // our load listener automatically enables SdkProperties.setTestMode(true) so real Unity video ads still play!
-        UnityAds.initialize(appContext, APP_ID, false, new IUnityAdsInitializationListener() {
-            @Override
-            public void onInitializationComplete() {
-                isInitializing = false;
-                Log.i(TAG, "UnityAds onInitializationComplete! Preloading " + REWARDED_PLACEMENT + " & " + INTERSTITIAL_PLACEMENT);
+        Log.i(TAG, "Initializing Unity Ads " + UnityAds.getVersion() + " gameId=" + APP_ID + " testMode=false");
+        UnityAds.initialize(activity().getApplicationContext(), APP_ID, false, new IUnityAdsInitializationListener() {
+            public void onInitializationComplete() { main.post(new Runnable() { public void run() {
+                initializing = false;
+                Log.i(TAG, "onInitializationComplete");
                 preloadPlacements();
-            }
-
-            @Override
-            public void onInitializationFailed(UnityAds.UnityAdsInitializationError error, String message) {
-                isInitializing = false;
-                Log.e(TAG, "UnityAds onInitializationFailed (" + error + "): " + message + " -> enabling testMode");
-                SdkProperties.setTestMode(true);
-                SdkProperties.setInitializeState(SdkProperties.InitializationState.NOT_INITIALIZED);
-                UnityAds.initialize(appContext, APP_ID, true, new IUnityAdsInitializationListener() {
-                    @Override
-                    public void onInitializationComplete() {
-                        Log.i(TAG, "UnityAds testMode onInitializationComplete!");
-                        preloadPlacements();
-                    }
-
-                    @Override
-                    public void onInitializationFailed(UnityAds.UnityAdsInitializationError err2, String msg2) {
-                        Log.e(TAG, "UnityAds testMode init failed: " + err2 + " - " + msg2);
-                    }
-                });
+            } }); }
+            public void onInitializationFailed(final UnityAds.UnityAdsInitializationError error, final String message) {
+                main.post(new Runnable() { public void run() {
+                    initializing = false;
+                    Log.e(TAG, "Initialization failed: " + error + " " + message);
+                    finishRewarded("failed", "Ads are unavailable. Please try again later.");
+                } });
             }
         });
     }
-
-    public static void preloadPlacements() {
-        loadRewarded(false);
-        loadInterstitial(false);
-    }
-
-    private static void loadRewarded(final boolean showImmediately) {
-        Log.i(TAG, "UnityAds.load(" + REWARDED_PLACEMENT + ") [testMode=" + SdkProperties.isTestMode() + "]");
+    public static void preloadPlacements() { loadRewarded(); loadInterstitial(); }
+    private static void loadRewarded() {
+        if (rewardedLoaded) { if (pendingRewarded) showLoadedRewarded(); return; }
+        if (rewardedLoading) return;
+        rewardedLoading = true;
         UnityAds.load(REWARDED_PLACEMENT, new UnityAdsLoadOptions(), new IUnityAdsLoadListener() {
-            @Override
-            public void onUnityAdsAdLoaded(String placementId) {
-                Log.i(TAG, "onUnityAdsAdLoaded: " + placementId);
-                activeRewardedPlacement = placementId;
-                rewardedLoaded = true;
-                if (showImmediately || pendingShowRewarded) {
-                    pendingShowRewarded = false;
-                    showLoadedRewarded(placementId);
-                }
-            }
-
-            @Override
-            public void onUnityAdsFailedToLoad(String placementId, UnityAds.UnityAdsLoadError error, String message) {
-                Log.w(TAG, "onUnityAdsFailedToLoad (" + placementId + "): " + error + " | " + message);
-                rewardedLoaded = false;
-                if (!SdkProperties.isTestMode()) {
-                    Log.i(TAG, "Live fill unavailable for " + placementId + " (" + error + "), enabling UnityAds Test Mode so real video ad plays");
-                    SdkProperties.setTestMode(true);
-                    loadRewarded(showImmediately);
-                }
+            public void onUnityAdsAdLoaded(String id) { main.post(new Runnable() { public void run() {
+                rewardedLoading = false; rewardedLoaded = true;
+                Log.i(TAG, "onUnityAdsAdLoaded: " + REWARDED_PLACEMENT);
+                if (pendingRewarded) showLoadedRewarded();
+            } }); }
+            public void onUnityAdsFailedToLoad(String id, final UnityAds.UnityAdsLoadError error, final String message) {
+                main.post(new Runnable() { public void run() {
+                    rewardedLoading = false; rewardedLoaded = false;
+                    Log.w(TAG, "Rewarded load failed: " + error + " " + message);
+                    finishRewarded("failed", "No ad available. Please try again later.");
+                } });
             }
         });
     }
-
-    private static void loadInterstitial(final boolean showImmediately) {
-        Log.i(TAG, "UnityAds.load(" + INTERSTITIAL_PLACEMENT + ") [testMode=" + SdkProperties.isTestMode() + "]");
+    private static void loadInterstitial() {
+        if (interstitialLoaded || interstitialLoading) return;
+        interstitialLoading = true;
         UnityAds.load(INTERSTITIAL_PLACEMENT, new UnityAdsLoadOptions(), new IUnityAdsLoadListener() {
-            @Override
-            public void onUnityAdsAdLoaded(String placementId) {
-                Log.i(TAG, "onUnityAdsAdLoaded: " + placementId);
-                activeInterstitialPlacement = placementId;
-                interstitialLoaded = true;
-                if (showImmediately || pendingShowInterstitial) {
-                    pendingShowInterstitial = false;
-                    showLoadedInterstitial(placementId);
-                }
-            }
-
-            @Override
-            public void onUnityAdsFailedToLoad(String placementId, UnityAds.UnityAdsLoadError error, String message) {
-                Log.w(TAG, "onUnityAdsFailedToLoad (" + placementId + "): " + error + " | " + message);
-                interstitialLoaded = false;
-                if (!SdkProperties.isTestMode()) {
-                    Log.i(TAG, "Live fill unavailable for " + placementId + " (" + error + "), enabling UnityAds Test Mode so real interstitial plays");
-                    SdkProperties.setTestMode(true);
-                    loadInterstitial(showImmediately);
-                }
+            public void onUnityAdsAdLoaded(String id) { main.post(new Runnable() { public void run() {
+                interstitialLoading = false; interstitialLoaded = true;
+                Log.i(TAG, "onUnityAdsAdLoaded: " + INTERSTITIAL_PLACEMENT);
+            } }); }
+            public void onUnityAdsFailedToLoad(String id, final UnityAds.UnityAdsLoadError error, final String message) {
+                main.post(new Runnable() { public void run() {
+                    interstitialLoading = false; interstitialLoaded = false;
+                    Log.w(TAG, "Interstitial load failed: " + error + " " + message);
+                } });
             }
         });
     }
-
-    private static void showLoadedRewarded(final String placementId) {
-        final Activity activity = UnityPlayer.currentActivity;
-        if (activity == null) return;
-        activity.runOnUiThread(new Runnable() {
-            @Override
-            public void run() {
-                Log.i(TAG, "UnityAds.show() -> Rewarded placement: " + placementId);
-                UnityAds.show(activity, placementId, new UnityAdsShowOptions(), new IUnityAdsShowListener() {
-                    @Override
-                    public void onUnityAdsShowFailure(String pid, UnityAds.UnityAdsShowError error, String message) {
-                        Log.e(TAG, "onUnityAdsShowFailure (" + pid + "): " + error + " - " + message);
-                        rewardedLoaded = false;
-                        if (!SdkProperties.isTestMode()) {
-                            SdkProperties.setTestMode(true);
-                        }
-                        loadRewarded(false);
-                    }
-
-                    @Override
-                    public void onUnityAdsShowStart(String pid) {
-                        Log.i(TAG, "onUnityAdsShowStart (" + pid + ")");
-                        rewardedLoaded = false;
-                    }
-
-                    @Override
-                    public void onUnityAdsShowClick(String pid) {
-                        Log.i(TAG, "onUnityAdsShowClick (" + pid + ")");
-                    }
-
-                    @Override
-                    public void onUnityAdsShowComplete(String pid, UnityAds.UnityAdsShowCompletionState state) {
-                        Log.i(TAG, "onUnityAdsShowComplete (" + pid + ") state=" + state);
-                        loadRewarded(false);
-                    }
-                });
+    public static void showRewardedAd(final String description) {
+        if ("init".equals(description)) { init(); return; }
+        main.post(new Runnable() { public void run() {
+            if (pendingRewarded) return;
+            pendingRewarded = true;
+            main.postDelayed(loadTimeout, 60000);
+            if (activity() == null || showingInterstitial) {
+                finishRewarded("failed", "Please try again."); return;
+            }
+            if (!UnityAds.isInitialized()) { toast("Loading ad..."); ensureInitialized(); }
+            else if (rewardedLoaded) showLoadedRewarded();
+            else { toast("Loading ad..."); loadRewarded(); }
+        } });
+    }
+    private static void showLoadedRewarded() {
+        if (showingRewarded || !pendingRewarded) return;
+        if (activity() == null) { finishRewarded("failed", null); return; }
+        showingRewarded = true;
+        rewardedLoaded = false;
+        main.removeCallbacks(loadTimeout);
+        Log.i(TAG, "UnityAds.show -> " + REWARDED_PLACEMENT);
+        UnityAds.show(activity(), REWARDED_PLACEMENT, new UnityAdsShowOptions(), new IUnityAdsShowListener() {
+            public void onUnityAdsShowFailure(String id, final UnityAds.UnityAdsShowError error, final String message) {
+                main.post(new Runnable() { public void run() {
+                    Log.e(TAG, "Rewarded show failed: " + error + " " + message);
+                    finishRewarded("failed", "Ad could not play. Please try again."); loadRewarded();
+                } });
+            }
+            public void onUnityAdsShowStart(String id) { Log.i(TAG, "onUnityAdsShowStart: " + id); }
+            public void onUnityAdsShowClick(String id) { Log.i(TAG, "onUnityAdsShowClick: " + id); }
+            public void onUnityAdsShowComplete(String id, final UnityAds.UnityAdsShowCompletionState state) {
+                main.post(new Runnable() { public void run() {
+                    Log.i(TAG, "onUnityAdsShowComplete: " + state);
+                    finishRewarded(state == UnityAds.UnityAdsShowCompletionState.COMPLETED ? "completed" : "skipped",
+                        state == UnityAds.UnityAdsShowCompletionState.COMPLETED ? null : "Ad skipped. No reward granted.");
+                    loadRewarded();
+                } });
             }
         });
     }
-
-    private static void showLoadedInterstitial(final String placementId) {
-        final Activity activity = UnityPlayer.currentActivity;
-        if (activity == null) return;
-        activity.runOnUiThread(new Runnable() {
-            @Override
-            public void run() {
-                Log.i(TAG, "UnityAds.show() -> Interstitial placement: " + placementId);
-                UnityAds.show(activity, placementId, new UnityAdsShowOptions(), new IUnityAdsShowListener() {
-                    @Override
-                    public void onUnityAdsShowFailure(String pid, UnityAds.UnityAdsShowError error, String message) {
-                        Log.e(TAG, "onUnityAdsShowFailure (" + pid + "): " + error + " - " + message);
-                        interstitialLoaded = false;
-                        if (!SdkProperties.isTestMode()) {
-                            SdkProperties.setTestMode(true);
-                        }
-                        loadInterstitial(false);
-                    }
-
-                    @Override
-                    public void onUnityAdsShowStart(String pid) {
-                        Log.i(TAG, "onUnityAdsShowStart (" + pid + ")");
-                        interstitialLoaded = false;
-                    }
-
-                    @Override
-                    public void onUnityAdsShowClick(String pid) {
-                        Log.i(TAG, "onUnityAdsShowClick (" + pid + ")");
-                    }
-
-                    @Override
-                    public void onUnityAdsShowComplete(String pid, UnityAds.UnityAdsShowCompletionState state) {
-                        Log.i(TAG, "onUnityAdsShowComplete (" + pid + ") state=" + state);
-                        loadInterstitial(false);
-                    }
-                });
-            }
-        });
-    }
-
-    public static void showRewardedAd(final String rewardDescription) {
-        if ("init".equals(rewardDescription)) {
-            init();
-            return;
-        }
-        final Activity activity = UnityPlayer.currentActivity;
-        if (activity == null) return;
-        activity.runOnUiThread(new Runnable() {
-            @Override
-            public void run() {
-                if (!UnityAds.isInitialized()) {
-                    pendingShowRewarded = true;
-                    ensureInitialized(activity);
-                    return;
+    public static void showInterstitialAd(final String description) {
+        main.post(new Runnable() { public void run() {
+            // An interstitial is shown only at this requested game transition, never after a delayed load.
+            if (activity() == null || pendingRewarded || showingInterstitial) return;
+            if (!UnityAds.isInitialized()) { ensureInitialized(); return; }
+            if (!interstitialLoaded) { loadInterstitial(); return; }
+            interstitialLoaded = false; showingInterstitial = true;
+            Log.i(TAG, "UnityAds.show -> " + INTERSTITIAL_PLACEMENT);
+            UnityAds.show(activity(), INTERSTITIAL_PLACEMENT, new UnityAdsShowOptions(), new IUnityAdsShowListener() {
+                public void onUnityAdsShowFailure(String id, UnityAds.UnityAdsShowError error, String message) {
+                    main.post(new Runnable() { public void run() { showingInterstitial = false; loadInterstitial(); } });
+                    Log.e(TAG, "Interstitial show failed: " + error + " " + message);
                 }
-                if (rewardedLoaded) {
-                    showLoadedRewarded(activeRewardedPlacement);
-                } else {
-                    pendingShowRewarded = true;
-                    loadRewarded(true);
+                public void onUnityAdsShowStart(String id) { Log.i(TAG, "onUnityAdsShowStart: " + id); }
+                public void onUnityAdsShowClick(String id) {}
+                public void onUnityAdsShowComplete(String id, UnityAds.UnityAdsShowCompletionState state) {
+                    main.post(new Runnable() { public void run() { showingInterstitial = false; loadInterstitial(); } });
                 }
-            }
-        });
-    }
-
-    public static void showInterstitialAd(final String contextDescription) {
-        final Activity activity = UnityPlayer.currentActivity;
-        if (activity == null) return;
-        activity.runOnUiThread(new Runnable() {
-            @Override
-            public void run() {
-                if (!UnityAds.isInitialized()) {
-                    pendingShowInterstitial = true;
-                    ensureInitialized(activity);
-                    return;
-                }
-                if (interstitialLoaded) {
-                    showLoadedInterstitial(activeInterstitialPlacement);
-                } else {
-                    pendingShowInterstitial = true;
-                    loadInterstitial(true);
-                }
-            }
-        });
+            });
+        } });
     }
 }
