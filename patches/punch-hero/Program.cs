@@ -74,9 +74,8 @@ class Program {
         var athleteType = mod.GetType("Athlete");
         var playerPrefsXType = mod.GetType("PlayerPrefsX");
 
-        // Make PurchaseItemData.eventHandler public so GUIEventHandler can inspect PurchaseGameMoney
+        // Keep PurchaseItemData.eventHandler untouched (protected) so Unity's C++ binary serializer never shifts offsets!
         var pidEventHandlerField = purchaseItemDataType.Fields.First(f => f.Name == "eventHandler");
-        pidEventHandlerField.IsPublic = true;
 
         // Unity MonoBehaviour methods & String/Int32 helpers
         var monoBehaviourType = guiEventHandlerType.BaseType.Resolve();
@@ -318,7 +317,7 @@ class Program {
             il.Append(il.Create(OpCodes.Ret));
             il.Append(lblFallback);
             il.Append(il.Create(OpCodes.Ret));
-            guiEventHandlerType.Methods.Add(mCalcPackAds);
+            purchaseItemDataType.Methods.Add(mCalcPackAds);
         }
 
         var mFormatAdLabel = new MethodDefinition("FormatAdLabel", MethodAttributes.Public | MethodAttributes.Static, stringType);
