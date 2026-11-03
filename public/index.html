@@ -850,6 +850,7 @@
           <ul class="tw-patch-checklist">
             <li>Replaced 43KB 2012 ELF stub with real 6.8MB <code>assets/libs/armeabi-v7a/libunity.so</code></li>
             <li>Patched ARMv7 <code>0x70dbc</code> (<code>movs r6, r1; blne strlen</code>) to prevent <code>SIGSEGV</code> on <code>NULL</code> JNI strings</li>
+            <li><strong>Ad-Revived Economy:</strong> Patched <code>Assembly-CSharp.dll</code> so Item Upgrades (<code>+1</code> to <code>+10</code>), Skills, Costumes &amp; Currency Packs use <strong>Watch Ad</strong> instead of old money / dead Gacha servers</li>
             <li>4-byte zipaligned &amp; dual-signed (V1 JAR + V2 APK Signature Block) for Android 16</li>
           </ul>
           <div style="display:flex;justify-content:space-between;align-items:center;">
@@ -979,7 +980,7 @@
         testedOn: 'Samsung SM-G990E (Android 16)',
         size: '31.3 MB',
         apkUrl: 'https://github.com/phcodesage/touchwiz-vault/releases/download/v1.0.0/Punch_Hero_v1.3.8_fixed.apk',
-        fixSummary: 'Unpacked 6.8MB libunity.so & 3.8MB libmono.so from assets/libs/armeabi-v7a/ + patched ARMv7 strlen(NULL) at 0x70dbc.',
+        fixSummary: 'Unpacked 6.8MB libunity.so & 3.8MB libmono.so + patched ARMv7 strlen(NULL) at 0x70dbc + patched Assembly-CSharp.dll so Item Upgrades (+1 to +10), Skills, and Shop items use Rewarded Ads instead of old money/IAP.',
         hexPatch: 'Offset 0x70dbc: e1a00001 -> e1b06001 (movs r6, r1) | 0x70dcc: ebff62ce -> 1bff62ce (blne strlen) | 0x70de4: e3550000 (cmp r5, #0)',
         adbCmd: 'adb install --bypass-low-target-sdk-block -r Punch_Hero_v1.3.8_fixed.apk'
       },
