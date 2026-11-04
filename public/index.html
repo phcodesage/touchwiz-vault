@@ -828,12 +828,12 @@
             <code>lib/armeabi-v7a/</code>, and <code>strlen(NULL)</code> JNI crashes when querying legacy device IDs.
             <strong>TouchWizVault</strong> preserves &amp; binary-patches them for modern devices.
           </p>
-          <p style="color:#ffd17a;line-height:1.6;"><strong>Installation on Android 14–16:</strong> The tested release requires installation from a computer with ADB. Opening the downloaded APK directly may show “App not installed.” Download the APK and run <code>adb install --bypass-low-target-sdk-block -r Punch_Hero_v1.3.8_ads_fixed.apk</code>. Updating with this signed build preserves your save; do not uninstall the game to troubleshoot.</p>
+          <p style="color:#ffd17a;line-height:1.6;"><strong>Installation on Android 14–16:</strong> The new installer build was installed and launch-tested on Galaxy S21 FE / Android 16. Play Protect may warn that it was built for an older Android version; review the warning and use “More details” → “Install anyway” if you choose to proceed. Your phone may ask for fingerprint or PIN confirmation. Install over your existing game to preserve its save. Requires a phone with 32-bit ARM app support.</p>
           <div class="tw-btn-row">
-            <a class="tw-btn tw-btn-install" href="https://github.com/phcodesage/touchwiz-vault/releases/download/v1.0.1/Punch_Hero_v1.3.8_ads_fixed.apk" download>
-              ⬇ Download Punch Hero v1.3.8 (Ads Fixed • ADB Install)
+            <a class="tw-btn tw-btn-install" href="https://github.com/phcodesage/touchwiz-vault/releases/download/v1.0.2-rc.2/Punch_Hero_v1.3.8_installable_rc2.apk" download>
+              ⬇ Download Punch Hero v1.3.8 (Android 14–16 Installer Fix)
             </a>
-            <a class="tw-btn" href="https://github.com/phcodesage/touchwiz-vault/releases/download/v1.0.2-rc.1/Punch_Hero_v1.3.8_installable.apk" download>Try tap-to-install candidate (device testing pending)</a>
+            <a class="tw-btn" href="https://github.com/phcodesage/touchwiz-vault/releases/download/v1.0.1/Punch_Hero_v1.3.8_ads_fixed.apk" download>Previous build (requires ADB)</a>
             <button class="tw-btn tw-btn-primary" onclick="switchSectionByName('patcher')">
               ⚡ Open Browser Auto-Patcher
             </button>
@@ -981,10 +981,10 @@
         origSdk: 'API 14 (Android 4.0)',
         testedOn: 'Samsung SM-G990E (Android 16)',
         size: '31.8 MB',
-        apkUrl: 'https://github.com/phcodesage/touchwiz-vault/releases/download/v1.0.1/Punch_Hero_v1.3.8_ads_fixed.apk',
+        apkUrl: 'https://github.com/phcodesage/touchwiz-vault/releases/download/v1.0.2-rc.2/Punch_Hero_v1.3.8_installable_rc2.apk',
         fixSummary: 'Unpacked 6.8MB libunity.so & 3.8MB libmono.so + patched ARMv7 strlen(NULL) at 0x70dbc + embedded Unity Ads 4.4.1 (App 800423173: BP_Rewarded_Android & BP_Interstitial_Android) with cost-aligned multi-ad progress (1–40 Ads) for Star/Gold packs, items, skills & upgrades (+1 to +10).',
         hexPatch: 'Offset 0x70dbc: e1a00001 -> e1b06001 (movs r6, r1) | 0x70dcc: ebff62ce -> 1bff62ce (blne strlen) | 0x70de4: e3550000 (cmp r5, #0)',
-        adbCmd: 'adb install --bypass-low-target-sdk-block -r Punch_Hero_v1.3.8_ads_fixed.apk'
+        adbCmd: 'adb install -r Punch_Hero_v1.3.8_installable_rc2.apk'
       },
       {
         id: 'zenonia-4',

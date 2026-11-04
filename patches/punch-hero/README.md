@@ -43,3 +43,11 @@ python3 tests/test_native.py /path/to/Punch_Hero_v1.3.8_ads_fixed.apk /path/to/P
 ```
 
 Signatures and manifest fields verified. ARM emulation passed at three load addresses, checking cache flush, RX restoration, register/stack preservation, and unchanged game assets/relocation records. The physical phone disconnected before testing this candidate. Do not treat these checks as evidence of normal installation, game startup, permissions compatibility, or ad playback on a device. The candidate has not replaced the verified release.
+
+## Device validation and profile compatibility (RC2, version code 1385)
+
+The RC1 package installed normally over wireless ADB without `--bypass-low-target-sdk-block`, but fresh launch exposed legacy Gamevil profile and CPI gift-service calls to phone identifiers. `legacy_profile.py` replaces the obsolete profile helper results and remaining direct TelephonyManager identifier reads with empty strings. It regenerates the DEX SHA-1 and Adler32 checksums. No phone/account permissions are granted.
+
+RC2 installed on Samsung SM-G990E / Android 16, reached the Punch Hero title screen, and loaded both live ad placements. Play Protect required the per-app older-target override and on-device biometric confirmation during the first installation. Later updates installed successfully. The original game was already absent before the first install attempt in this session; no game package was uninstalled or cleared by these commands. Save migration from an existing target-14 installation and full gameplay/ad completion on RC2 have not been exercised.
+
+The current preparation script defaults to target API 24 / version code 1385. RC1 is superseded because of its confirmed startup crash. The test script now also validates DEX checksums and permits the explicit Java profile compatibility change.

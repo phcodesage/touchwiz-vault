@@ -11,7 +11,11 @@ from unicorn.arm_const import *
 old_path, candidate_path = sys.argv[1:]
 with zipfile.ZipFile(old_path) as old, zipfile.ZipFile(candidate_path) as new:
     changed = [n for n in old.namelist() if not n.startswith('META-INF/') and old.read(n) != new.read(n)]
-    assert set(changed) == {'AndroidManifest.xml', 'assets/libs/armeabi-v7a/libunity.so', 'lib/armeabi-v7a/libunity.so'}, changed
+    assert set(changed) == {'AndroidManifest.xml', 'assets/libs/armeabi-v7a/libunity.so', 'lib/armeabi-v7a/libunity.so', 'classes.dex'}, changed
+    dex = new.read('classes.dex')
+    import hashlib, zlib
+    assert dex[12:32] == hashlib.sha1(dex[32:]).digest()
+    assert struct.unpack_from('<I', dex, 8)[0] == zlib.adler32(dex[12:]) & 0xffffffff
     data = new.read('lib/armeabi-v7a/libunity.so')
     original = old.read('lib/armeabi-v7a/libunity.so')
     asset = new.read('assets/libs/armeabi-v7a/libunity.so')
@@ -53,4 +57,4 @@ for base in (0x10000000, 0x20000000, 0x50000000):
     assert uc.reg_read(UC_ARM_REG_SP) == 0x70001000
     assert uc.reg_read(UC_ARM_REG_PC) == base+0x100
     print(f'PASS: relocated load at {base:#x}, cache flush, RX protection, register/stack preservation')
-print('PASS: game assets and relocation records preserved; original differences between Unity copies preserved')
+print('PASS: DEX checksums valid; game assets and relocation records preserved; original differences between Unity copies preserved')

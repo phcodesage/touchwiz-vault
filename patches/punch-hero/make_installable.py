@@ -8,6 +8,7 @@ import subprocess
 import tempfile
 import zipfile
 from legacy_unity import patch_unity
+from legacy_profile import patch_profile
 
 
 def patch_manifest(data, target_sdk=24, version_code=1382):
@@ -47,7 +48,7 @@ def main():
     parser.add_argument('--input', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--target-sdk', type=int, default=24)
-    parser.add_argument('--version-code', type=int, default=1382)
+    parser.add_argument('--version-code', type=int, default=1385)
     parser.add_argument('--build-tools', type=Path, default=Path.home()/'Library/Android/sdk/build-tools/36.0.0')
     parser.add_argument('--toolchain', type=Path, default=Path.home()/'Library/Android/sdk/ndk/28.2.13676358/toolchains/llvm/prebuilt/darwin-x86_64/bin')
     args = parser.parse_args()
@@ -63,6 +64,8 @@ def main():
                 data = original.read(entry.filename)
                 if entry.filename == 'AndroidManifest.xml':
                     data = patch_manifest(data, args.target_sdk, args.version_code)
+                if entry.filename == 'classes.dex':
+                    data = patch_profile(data)
                 if entry.filename.endswith('/libunity.so'):
                     data = patch_unity(data, args.toolchain)
                 output.writestr(entry, data)
