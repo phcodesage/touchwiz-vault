@@ -1,0 +1,11 @@
+Plants War Offline
+Package: com.gamevil.plantswar.offline
+Version: 1.5.0 / 153
+Target: API 24
+Device: Samsung SM-G990E / Android 16
+
+Confirmed: normal ADB install; intro loads; 3D tutorial runs; pause/resume works; combat HUD and potion controls visible; no blocking network dialog.
+
+Static verification: only manifest/DEX changed; original game assets and native libraries intact; DEX SHA-1/Adler32 valid; APK signature verified; sensitive/shared-storage permissions removed.
+
+Not validated: complete campaign, shop, save restore after restart, launch with all networking disabled, new rewarded ads (not implemented).
